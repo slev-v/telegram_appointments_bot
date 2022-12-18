@@ -29,6 +29,34 @@ async def create_time(state):
             db.commit()
 
 
+async def get_date():
+    fetch = cur.execute('SELECT date FROM appointment').fetchall()
+    dates = []
+    for row in fetch:
+        dates.append(row[0])
+    return dates
+
+
+async def get_time(date):
+    fetch = cur.execute('SELECT time FROM appointment WHERE date = ?', [date]).fetchall()
+    times = []
+    for row in fetch:
+        times.append(row[0])
+    return times
+
+
+async def free_check(state):
+    async with state.proxy() as data:
+        free = cur.execute('SELECT free FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']]).fetchone()
+        return free[0]
+
+
+async def delete_time(state):
+    async with state.proxy() as data:
+        cur.execute('DELETE FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']])
+        db.commit()
+
+
 # async def update_time(date, time):
 #     is_free = cur.execute('SELECT free FROM appointment WHERE date = ? AND time = ?', [date, time]).fetchone()
 #     if not is_free and is_free[0] == 1:
