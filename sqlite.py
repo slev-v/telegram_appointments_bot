@@ -16,7 +16,7 @@ async def db_start():
         name TEXT,
         tgId NUMERIC,
         username TEXT,
-        telNumber TEXT
+        phNumber TEXT
     )""")
 
     db.commit()
@@ -31,8 +31,11 @@ async def create_time(state):
             db.commit()
 
 
-async def get_date():
-    fetch = cur.execute('SELECT date FROM appointment').fetchall()
+async def get_date(target):
+    if target == 'update':
+        fetch = cur.execute('SELECT date FROM appointment WHERE free = ?', [1, ]).fetchall()
+    else:
+        fetch = cur.execute('SELECT date FROM appointment').fetchall()
     dates = []
     for row in fetch:
         dates.append(row[0])
@@ -57,6 +60,15 @@ async def free_check(state):
 async def delete_time(state):
     async with state.proxy() as data:
         cur.execute('DELETE FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']])
+        db.commit()
+
+
+async def update_appointment(state):
+    async with state.proxy() as data:
+        cur.execute(
+            'UPDATE appointment SET free = 0, name = ?, tgId = ?, username = ?, phNumber = ? WHERE date = ? AND time = ?',
+            [data['name'], data['tgId'], data['username'], data['phNumber'], data['date'], data['time']]
+        )
         db.commit()
 
 # async def update_time(date, time):

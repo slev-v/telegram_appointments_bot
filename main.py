@@ -6,7 +6,7 @@ from aiogram.dispatcher.filters import Text
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 from config import TOKEN_API
-from sqlite import create_time, get_time, get_date, db_start, free_check, delete_time
+from sqlite import create_time, get_time, get_date, db_start, free_check, delete_time, update_appointment
 
 storage = MemoryStorage()
 bot = Bot(TOKEN_API)
@@ -21,16 +21,72 @@ class ProfileStatesGroup(StatesGroup):
     add_date = State()
     add_time = State()
 
-    del_month = State()
     del_date = State()
     del_time = State()
+    del_delete = State()
     del_confirm = State()
+
+    update_date = State()
+    update_time = State()
+    update_name = State()
+    update_ph_number = State()
+    update_create = State()
 
 
 def get_main_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add('Описание бота', 'Добавить свободное время', 'Записаться на приём', 'Ваши записи', 'Удалить время')
     return kb
+
+
+async def choose_month(message, state, target):
+    dates = await get_date(target)
+    months = set(date[3:] for date in dates)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(months), 'Главное меню')
+
+    await message.answer('Выберите месяц', reply_markup=kb)
+
+    async with state.proxy() as data:
+        data['months'] = months
+        data['dates'] = dates
+
+
+async def choose_date(message, state):
+    async with state.proxy() as data:
+        months = data['months']
+        dates = data['dates']
+
+    if message.text in months:
+        dates_s = []
+        for date in sorted(dates):
+            if date[3:] == message.text:
+                dates_s.append(date)
+        kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*dates_s, 'Главное меню')
+
+        await message.answer('Выберите дату', reply_markup=kb)
+        await ProfileStatesGroup.next()
+
+        async with state.proxy() as data:
+            data['dates'] = dates
+    else:
+        await message.reply('Выберите месяц из клавиатуры!')
+
+
+async def choose_time(message, state):
+    async with state.proxy() as data:
+        dates = data['dates']
+
+    if message.text in dates:
+        times = await get_time(message.text)
+        async with state.proxy() as data:
+            data['date'] = message.text
+            data['times'] = times
+
+        kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(times), 'Главное меню')
+        await message.answer('Выберите время', reply_markup=kb)
+        await ProfileStatesGroup.next()
+    else:
+        await message.reply('Выберите дату из клавиатуры!')
 
 
 @dp.message_handler(commands='start')
@@ -70,6 +126,7 @@ async def add_month(message: types.Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(*[f'{i}.{message.text if len(message.text) == 2 else f"0{message.text}"}' for i in range(1, 32)],
            'Главное меню')
+
     await message.answer('Выберите удобную вам дату', reply_markup=kb)
     await ProfileStatesGroup.next()
 
@@ -111,58 +168,30 @@ async def add_time(message: types.Message, state: FSMContext):
 
 #  block for deleting appointments (for admins)
 @dp.message_handler(Text('Удалить время'))
-async def cm_delete_time(message: types.Message, state: FSMContext):
-    months = set(i[3:] for i in await get_date())
-    kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(months), 'Главное меню')
-    await message.answer('Выберите месяц', reply_markup=kb)
-    await ProfileStatesGroup.del_month.set()
-
-    async with state.proxy() as data:
-        data['months'] = months
-
-
-@dp.message_handler(state=ProfileStatesGroup.del_month)
 async def del_month(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        moths = data['months']
-    if message.text in moths:
-        dates = set(await get_date())
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        for date in sorted(dates):
-            if date[3:] == message.text:
-                kb.add(date)
-        kb.add('Главное меню')
-        await message.answer('Выберите дату', reply_markup=kb)
-        await ProfileStatesGroup.next()
-        async with state.proxy() as data:
-            data['dates'] = dates
-    else:
-        await message.reply('Выберите месяц из клавиатуры!')
+    await choose_month(message, state, 'delete')
+    await ProfileStatesGroup.del_date.set()
 
 
 @dp.message_handler(state=ProfileStatesGroup.del_date)
 async def del_date(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        dates = data['dates']
-    if message.text in dates:
-        times = await get_time(message.text)
-        async with state.proxy() as data:
-            data['date'] = message.text
-            data['times'] = times
-        kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(times), 'Главное меню')
-        await message.answer('Выберите время', reply_markup=kb)
-        await ProfileStatesGroup.next()
-    else:
-        await message.reply('Выберите дату из клавиатуры!')
+    await choose_date(message, state)
 
 
 @dp.message_handler(state=ProfileStatesGroup.del_time)
 async def del_time(message: types.Message, state: FSMContext):
+    await choose_time(message, state)
+
+
+@dp.message_handler(state=ProfileStatesGroup.del_delete)
+async def del_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         times = data['times']
+
     if message.text in times:
         async with state.proxy() as data:
             data['time'] = message.text
+
         if await free_check(state) == 1:
             kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню', 'Удалить время')
             await delete_time(state)
@@ -178,9 +207,63 @@ async def del_time(message: types.Message, state: FSMContext):
 
 @dp.message_handler(Text('Да'), state=ProfileStatesGroup.del_confirm)
 async def del_time_confirm(message: types.Message, state: FSMContext):
-    await delete_time(state)
     kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню', 'Удалить время')
+    await delete_time(state)
     await message.answer('Время было удалено', reply_markup=kb)
+    await state.finish()
+
+
+#  block for updating appointments
+@dp.message_handler(Text('Записаться на приём'))
+async def update_month(message: types.Message, state: FSMContext):
+    await choose_month(message, state, 'update')
+    await ProfileStatesGroup.update_date.set()
+
+
+@dp.message_handler(state=ProfileStatesGroup.update_date)
+async def update_date(message: types.Message, state: FSMContext):
+    await choose_date(message, state)
+
+
+@dp.message_handler(state=ProfileStatesGroup.update_time)
+async def update_time(message: types.Message, state: FSMContext):
+    await choose_time(message, state)
+
+
+@dp.message_handler(state=ProfileStatesGroup.update_name)
+async def update_name(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        times = data['times']
+
+    if message.text in times:
+        async with state.proxy() as data:
+            data['time'] = message.text
+
+        kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню')
+        await message.answer('Введите ваше имя и фамилию', reply_markup=kb)
+        await ProfileStatesGroup.next()
+    else:
+        await message.answer('Выберите время из клавиатуры!')
+
+
+@dp.message_handler(state=ProfileStatesGroup.update_ph_number)
+async def update_ph_number(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data['name'] = message.text
+    kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню')
+    await message.answer('Теперь введите ваш номер телефона', reply_markup=kb)
+    await ProfileStatesGroup.next()
+
+
+@dp.message_handler(state=ProfileStatesGroup.update_create)
+async def update_create(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data['phNumber'] = message.text
+        data['tgId'] = message.from_user.id
+        data['username'] = message.from_user.username
+    await update_appointment(state)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню')
+    await message.answer('Ваша запись была создана, скоро с вами свяжется психолог', reply_markup=kb)
     await state.finish()
 
 
