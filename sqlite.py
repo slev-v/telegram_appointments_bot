@@ -1,5 +1,6 @@
 import sqlite3
 
+
 async def db_start():
     global db, cur
 
@@ -23,7 +24,8 @@ async def db_start():
 
 async def create_time(state):
     async with state.proxy() as data:
-        exists = cur.execute('SELECT 1 FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']]).fetchone()
+        exists = cur.execute('SELECT 1 FROM appointment WHERE date = ? AND time = ?',
+                             [data['date'], data['time']]).fetchone()
         if not exists:
             cur.execute('INSERT INTO appointment(date, time) VALUES(?, ?)', [data['date'], data['time']])
             db.commit()
@@ -47,7 +49,8 @@ async def get_time(date):
 
 async def free_check(state):
     async with state.proxy() as data:
-        free = cur.execute('SELECT free FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']]).fetchone()
+        free = cur.execute('SELECT free FROM appointment WHERE date = ? AND time = ?',
+                           [data['date'], data['time']]).fetchone()
         return free[0]
 
 
@@ -55,7 +58,6 @@ async def delete_time(state):
     async with state.proxy() as data:
         cur.execute('DELETE FROM appointment WHERE date = ? AND time = ?', [data['date'], data['time']])
         db.commit()
-
 
 # async def update_time(date, time):
 #     is_free = cur.execute('SELECT free FROM appointment WHERE date = ? AND time = ?', [date, time]).fetchone()

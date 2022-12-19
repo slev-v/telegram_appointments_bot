@@ -109,52 +109,71 @@ async def add_time(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-#  block for deliting appointments (for admins)
+#  block for deleting appointments (for admins)
 @dp.message_handler(Text('Удалить время'))
-async def cm_delete_time(message: types.Message):
-    month = set(i[3:] for i in await get_date())
-    kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(month), 'Главное меню')
+async def cm_delete_time(message: types.Message, state: FSMContext):
+    months = set(i[3:] for i in await get_date())
+    kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(months), 'Главное меню')
     await message.answer('Выберите месяц', reply_markup=kb)
     await ProfileStatesGroup.del_month.set()
 
+    async with state.proxy() as data:
+        data['months'] = months
+
 
 @dp.message_handler(state=ProfileStatesGroup.del_month)
-async def del_month(message: types.Message):
-    dates = set(await get_date())
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    for date in sorted(dates):
-        if date[3:] == message.text:
-            kb.add(date)
-    kb.add('Главное меню')
-    await message.answer('Выберите дату', reply_markup=kb)
-    await ProfileStatesGroup.next()
+async def del_month(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        moths = data['months']
+    if message.text in moths:
+        dates = set(await get_date())
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        for date in sorted(dates):
+            if date[3:] == message.text:
+                kb.add(date)
+        kb.add('Главное меню')
+        await message.answer('Выберите дату', reply_markup=kb)
+        await ProfileStatesGroup.next()
+        async with state.proxy() as data:
+            data['dates'] = dates
+    else:
+        await message.reply('Выберите месяц из клавиатуры!')
 
 
 @dp.message_handler(state=ProfileStatesGroup.del_date)
 async def del_date(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        data['date'] = message.text
-
-    times = await get_time(message.text)
-    kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(times), 'Главное меню')
-    await message.answer('Выберите время', reply_markup=kb)
-    await ProfileStatesGroup.next()
+        dates = data['dates']
+    if message.text in dates:
+        times = await get_time(message.text)
+        async with state.proxy() as data:
+            data['date'] = message.text
+            data['times'] = times
+        kb = ReplyKeyboardMarkup(resize_keyboard=True).add(*sorted(times), 'Главное меню')
+        await message.answer('Выберите время', reply_markup=kb)
+        await ProfileStatesGroup.next()
+    else:
+        await message.reply('Выберите дату из клавиатуры!')
 
 
 @dp.message_handler(state=ProfileStatesGroup.del_time)
 async def del_time(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
-        data['time'] = message.text
-
-    if await free_check(state) == 1:
-        kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню', 'Удалить время')
-        await delete_time(state)
-        await message.answer('Время было удалено', reply_markup=kb)
-        await state.finish()
-    elif await free_check(state) == 0:
-        kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Да', 'Главное меню')
-        await message.answer('На это время есть запись, вы уверены в удалении?', reply_markup=kb)
-        await ProfileStatesGroup.next()
+        times = data['times']
+    if message.text in times:
+        async with state.proxy() as data:
+            data['time'] = message.text
+        if await free_check(state) == 1:
+            kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Главное меню', 'Удалить время')
+            await delete_time(state)
+            await message.answer('Время было удалено', reply_markup=kb)
+            await state.finish()
+        elif await free_check(state) == 0:
+            kb = ReplyKeyboardMarkup(resize_keyboard=True).add('Да', 'Главное меню')
+            await message.answer('На это время есть запись, вы уверены в удалении?', reply_markup=kb)
+            await ProfileStatesGroup.next()
+    else:
+        await message.reply('Выберите время из клавиатуры!')
 
 
 @dp.message_handler(Text('Да'), state=ProfileStatesGroup.del_confirm)
